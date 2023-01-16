@@ -1,5 +1,5 @@
 # Install
-`$ pip install count-down`
+`$ pip install countdownfmt`
 
 # Documentation
 Pending...
