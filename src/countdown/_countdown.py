@@ -198,8 +198,8 @@ class Formatter:
         
         """
         log_formatter.debug("Creating default formatter")
-        return Formatter("T{z}{w}{wd}{d}{dd}{h}{hd}{m}{md}{s}{sd}", wd="w ", dd="d ", hd="h ",
-                         md="m ", sd="s ")
+        return Formatter("{w}{wd}{d}{dd}{h}{hd}{M}{Md}{s}{sd}", wd="w ", dd="d ", hd="h ",
+                         Md="m ", sd="s ")
 
     @staticmethod
     def _get_weeks(microseconds: int) -> tuple[int, int]:

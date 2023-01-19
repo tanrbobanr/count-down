@@ -3,7 +3,7 @@
 """
 import sys
 sys.path.append(".")
-from src import countdownfmt
+from src import countdown
 import datetime
 # import logging
 # loggers = [logging.getLogger(name) for name in logging.root.manager.loggerDict]
@@ -12,7 +12,7 @@ import datetime
 #         l.setLevel(10)
 
 
-c = countdownfmt.Countdown(
+c = countdown.Formatter(
     "T{z}{w}{wL}{p}{wR}{d}{dL}{P}{dR}{h}{hL}{ep}{hR}{M}{ML}{eP}{MR}{s}{sL}{Ep}{sR}{m}{mL}{EP}{mR}{u}",
     wL="w[",
     wR="] ",
