@@ -18,11 +18,11 @@ __url__ = "https://github.com/tanrbobanr/countdown"
 __download_url__ = "https://pypi.org/project/countdown"
 
 __all__ = (
-    "Formatter",
     "Countdown",
+    "formatter",
     "constants"
 )
 
-from ._countdown import Formatter
-Countdown = Formatter
+from ._countdown import Countdown
+from . import formatter
 from . import constants

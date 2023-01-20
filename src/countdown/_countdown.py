@@ -23,312 +23,122 @@ SOFTWARE.
 """
 
 from typing import Union
+from . import formatter
 from . import constants
+from . import models
 from . import types
+from . import utils
 import datetime
 import plogging
 import logging
-import inspect
-import string
 import typing
-str_formatter = string.Formatter()
-del string
 
 
-plural_flag_to_plural = {
-    "p": "s",
-    "P": "S",
-    "ep": "es",
-    "eP": "eS",
-    "Ep": "Es",
-    "EP": "ES",
-}
-
-
-log_flag = plogging.setup_new("Flag", level=logging.INFO, package=__name__)
-log_flags = plogging.setup_new("Flags", level=logging.INFO, package=__name__)
-log_formatter = plogging.setup_new("Formatter", level=logging.INFO, package=__name__)
-
-
-class Flag:
-    __slots__ = ("name", "plural_specifiers", "extras")
-    def __init__(self, name: str) -> None:
-        log_flag.debug(f"Creating flag: '{name}'")
-        self.name = name
-        self.plural_specifiers: set[str] = set()
-        self.extras: set[str] = set()
-
-    def get_plurals(self) -> dict[str, str]:
-        log_flag.debug(f"Acquiring converted plural specifiers for flag: '{self.name}'")
-        plurals = {f"{self.name}_{spec}": plural_flag_to_plural[spec]
-                   for spec in self.plural_specifiers}
-        log_flag.debug(f"Acquired converted plural specifiers for flag: '{self.name}' -> {plurals}")
-        return plurals
-    
-    def get_empty_plurals(self) -> dict[str, str]:
-        log_flag.debug(f"Acquiring empty plural specifiers for flag: '{self.name}'")
-        plurals = {f"{self.name}_{spec}": "" for spec in self.plural_specifiers}
-        log_flag.debug(f"Acquired empty plural specifiers for flag: '{self.name}' -> {plurals}")
-        return plurals
-
-    def get_extras(self, defaults: dict) -> tuple[dict[str, str], dict[str, typing.Callable]]:
-        kwargs: dict[str, str] = {}
-        funcs: dict[str, typing.Callable] = {}
-        log_flag.debug(f"Acquiring extras for flag: '{self.name}' with defaults: {defaults}")
-        for ext in self.extras:
-            try:
-                d = defaults[ext]
-                if inspect.isfunction(d):
-                    funcs[ext] = d
-                else:
-                    kwargs[ext] = d
-            except KeyError as exc:
-                raise KeyError(f"Missing default: {ext}") from exc
-        log_flag.debug(f"Acquired extras for flag: '{self.name}' -> kwargs={kwargs}, funcs={funcs}")
-        return kwargs, funcs
-    
-    def get_empty_extras(self) -> dict[str, str]:
-        log_flag.debug(f"Acquiring empty extras for flag: '{self.name}'")
-        extras = {ext: "" for ext in self.extras}
-        log_flag.debug(f"Acquired empty extras for flag: '{self.name}' -> {extras}")
-        return extras
-
-    def get_empty_kwargs(self) -> dict[str, str]:
-        log_flag.debug(f"Acquiring empty kwargs for flag: '{self.name}'")
-        kwargs = {self.name: ""}
-        kwargs.update(self.get_empty_plurals())
-        kwargs.update(self.get_empty_extras())
-        log_flag.debug(f"Acquired empty kwargs for flag: '{self.name}' -> {kwargs}")
-        return kwargs
-
-
-class Flags(list[Flag]):
-    def __contains__(self, other: Union[str, Flag]) -> bool:
-        if isinstance(other, Flag):
-            other = other.name
-        for f in self:
-            if f.name == other:
-                return True
-        return False
-    
-    def __getitem__(self, index: Union[str, Flag, int]) -> Flag:
-        if isinstance(index, int):
-            return super().__getitem__(index)
-
-        if isinstance(index, Flag):
-            index = index.name
-        for f in self:
-            if f.name == index:
-                return f
-        raise KeyError
-    
-    @typing.overload
-    def get(self, index: Union[str, Flag, int]) -> Flag: ...
-    @typing.overload
-    def get(self, index: Union[str, Flag, int], default: types.T) -> Union[Flag, types.T]: ...
-    def get(self, index: Union[str, Flag, int], default = types.MISSING):
-        if default is types.MISSING:
-            log_flag.debug(f"Acquiring flag by index: {index}")
-            return self[index]
-        log_flag.debug(f"Acquiring flag by index: {index} with default: {default}")
-        try:
-            return self[index]
-        except KeyError:
-            return default
-
-
-def update_format_string(fmt: types.SupportsBracketFormat
-                         ) -> tuple[Flags, types.SupportsBracketFormat]:
-    data: list[str] = []
-    flags: Flags = Flags()
-
-    for literal_text, field_name, format_spec, conversion in str_formatter.parse(fmt):
-        if literal_text:
-            data.append(literal_text)
-        
-        # usually only happens at the very end if there is leftover text
-        if field_name is None and format_spec is None and conversion is None:
-            continue
-        
-        _conversion = f"!{conversion}" if conversion else ""
-        _format_spec = f":{format_spec}" if format_spec else ""
-        
-        if not field_name:
-            data.append(f"{{{_conversion}{_format_spec}}}")
-            continue
-        
-        if field_name in constants.SKIPPED_FLAGS:
-            data.append(f"{{{field_name}{_conversion}{_format_spec}}}")
-            continue
-        
-        if field_name in constants.VALID_PLURAL_FLAGS and flags:
-            flags[-1].plural_specifiers.add(field_name)
-            data.append(f"{{{flags[-1].name}_{field_name}{_conversion}{_format_spec}}}")
-            continue
-
-        if field_name in constants.VALID_FLAGS:
-            if field_name not in flags:
-                flags.append(Flag(field_name))
-            data.append(f"{{{field_name}{_conversion}{_format_spec}}}")
-            continue
-        
-        if not flags:
-            raise ValueError(f"Invalid flag: {field_name}")
-        
-        flags[-1].extras.add(field_name)
-        data.append(f"{{{field_name}{_conversion}{_format_spec}}}")
-
-
-    return (flags, "".join(data))
-
-
-class Formatter:
+class Countdown:
+    _log = plogging.setup_new("Countdown", level=logging.INFO, package=__name__)
     def __init__(self, fmt: types.SupportsBracketFormat, remove_empty: bool = True,
-                 strip: bool = True, max_value: int = None, **defaults) -> None:
-        log_formatter.debug(f"Updating format string: '{fmt}'")
-        self.flags, self.fmt = update_format_string(fmt)
-        self.remove_empty = remove_empty
-        self.strip = strip
-        self.max_value = max_value
-        self.defaults = defaults
+                 max_value: int = None, strip_output: bool = True,
+                 **defaults: Union[typing.Callable[[models.TimeValue], typing.Any], typing.Any]
+                 ) -> None:
+        Countdown._log.debug(f"Updating format string: '{fmt}'")
+        self.__ofmt = fmt
+        self.__flags, self.__fmt = formatter.update_fmt(fmt)
+        self._remove_empty = remove_empty
+        self._max_value = max_value
+        self._strip_output = strip_output
+        self._defaults = defaults
     
-    @staticmethod
-    def default_formatter() -> "Formatter":
-        """Create and return the default formatter.
+    @property
+    def flags(self) -> formatter.Flags:
+        """The `Flags` object that has been constructed from the given format string.
         
         """
-        log_formatter.debug("Creating default formatter")
-        return Formatter("{w}{wd}{d}{dd}{h}{hd}{M}{Md}{s}{sd}", wd="w ", dd="d ", hd="h ",
+        return self.__flags
+    
+    @property
+    def orig_fmt(self) -> str:
+        """The original format string.
+        
+        """
+        return self.__ofmt
+    
+    @property
+    def fmt(self) -> str:
+        """The updated format string.
+        
+        """
+        return self.__fmt
+    
+    @utils.StaticProperty
+    def default() -> "Countdown":
+        """Create and return the default `Countdown` instance.
+        
+        """
+        Countdown._log.debug("Creating default formatter")
+        return Countdown("{w}{wd}{d}{dd}{h}{hd}{M}{Md}{s}{sd}", wd="w ", dd="d ", hd="h ",
                          Md="m ", sd="s ")
 
-    @staticmethod
-    def _get_weeks(microseconds: int) -> tuple[int, int]:
-        """Return the number of weeks and microseconds remaining given a number of starting
-        microseconds.
-        
-        """
-        log_formatter.debug(f"Acquiring weeks from microseconds: {microseconds}")
-        return divmod(microseconds, constants.MICROSECONDS_IN_WEEK)
-    
-    @staticmethod
-    def _get_days(microseconds: int) -> tuple[int, int]:
-        """Return the number of days and microseconds remaining given a number of starting
-        microseconds.
-        
-        """
-        log_formatter.debug(f"Acquiring days from microseconds: {microseconds}")
-        return divmod(microseconds, constants.MICROSECONDS_IN_DAY)
-    
-    @staticmethod
-    def _get_hours(microseconds: int) -> tuple[int, int]:
-        """Return the number of hours and microseconds remaining given a number of starting
-        microseconds.
-        
-        """
-        log_formatter.debug(f"Acquiring hours from microseconds: {microseconds}")
-        return divmod(microseconds, constants.MICROSECONDS_IN_HOUR)
-    
-    @staticmethod
-    def _get_minutes(microseconds: int) -> tuple[int, int]:
-        """Return the number of minutes and microseconds remaining given a number of starting
-        microseconds.
-        
-        """
-        log_formatter.debug(f"Acquiring minutes from microseconds: {microseconds}")
-        return divmod(microseconds, constants.MICROSECONDS_IN_MINUTE)
-    
-    @staticmethod
-    def _get_seconds(microseconds: int) -> tuple[int, int]:
-        """Return the number of seconds and microseconds remaining given a number of starting
-        microseconds.
-        
-        """
-        log_formatter.debug(f"Acquiring seconds from microseconds: {microseconds}")
-        return divmod(microseconds, constants.MICROSECONDS_IN_SECOND)
-    
-    @staticmethod
-    def _get_milliseconds(microseconds: int) -> tuple[int, int]:
-        """Return the number of milliseconds and microseconds remaining given a number of starting
-        microseconds.
-        
-        """
-        log_formatter.debug(f"Acquiring milliseconds from microseconds: {microseconds}")
-        return divmod(microseconds, constants.MICROSECONDS_IN_MILLISECOND)
-
-    @staticmethod
-    def _get_microseconds(microseconds: int) -> tuple[int, int]:
-        """Return the number of microseconds and microseconds remaining given a number of starting
-        microseconds.
-
-        Equivalent to:
-        `return microseconds, 1`
-        
-        """
-        return microseconds, 1
-
-    def format(self, microseconds: Union[int, float]) -> str:
+    def format(self, microseconds: Union[int, float], *, ignore: bool = False) -> str:
         """The core method for formatting the format string with the given microseconds. All other
-        format methods in `Formatter` convert to microseconds, then call this method.
+        format methods in `Countdown` convert to microseconds, then call this method.
         
         """
-        log_formatter.debug(f"Formatting format string from microseconds: {microseconds}")
-        z_flag = "+" if microseconds >= 0 else "-"
+        Countdown._log.debug(f"Formatting format string from microseconds: {microseconds}")
+        z_flag = 1 if microseconds >= 0 else -1
         remaining = abs(int(microseconds))
-        funcs = {
-            "w": (self._get_weeks, constants.MICROSECONDS_IN_WEEK),
-            "d": (self._get_days, constants.MICROSECONDS_IN_DAY),
-            "h": (self._get_hours, constants.MICROSECONDS_IN_HOUR),
-            "M": (self._get_minutes, constants.MICROSECONDS_IN_MINUTE),
-            "s": (self._get_seconds, constants.MICROSECONDS_IN_SECOND),
-            "m": (self._get_milliseconds, constants.MICROSECONDS_IN_MILLISECOND),
-            "u": (self._get_microseconds, 1),
+        divs: dict[str, int] = {
+            "w": constants.MICROSECONDS_IN_WEEK,
+            "d": constants.MICROSECONDS_IN_DAY,
+            "h": constants.MICROSECONDS_IN_HOUR,
+            "M": constants.MICROSECONDS_IN_MINUTE,
+            "s": constants.MICROSECONDS_IN_SECOND,
+            "m": constants.MICROSECONDS_IN_MILLISECOND,
+            "u": 1,
         }
 
-        fmt_kwargs = {"z": z_flag}
-        values = {
-            "w": None,
-            "d": None,
-            "h": None,
-            "M": None,
-            "s": None,
-            "m": None,
-            "u": None,
-        }
-        extra_funcs: dict[str, typing.Callable] = {}
-        for flag_name, (func, mul) in funcs.items():
-            flag: Flag = self.flags.get(flag_name, None)
+        fmt_kwargs = {"z": "+" if z_flag == 1 else "-"}
+        tval = models.TimeValue(z=z_flag)
+
+        # these will be run later
+        funcs: dict[str, typing.Callable[[models.TimeValue], typing.Any]] = dict()
+
+        # if the flag name is present in our Flags instance, then convert; otherwise, move on
+        for flag_name, div in divs.items():
+            flag: formatter.Flag = self.__flags.get(flag_name, None)
             if flag:
-                value, remaining = func(remaining)
-                if self.max_value and value > self.max_value:
-                    remaining += (value - self.max_value) * mul
-                    value = self.max_value
+                value, remaining = divmod(remaining, div)
+                if self._max_value and value > self._max_value:
+                    remaining += (value - self._max_value) * div
+                    value = self._max_value
 
-                values[flag_name] = value
+                tval.set(flag_name, value)
 
-                if value == 0 and self.remove_empty:
+                if value == 0 and self._remove_empty:
                     fmt_kwargs.update(flag.get_empty_kwargs())
                     continue
 
                 fmt_kwargs[flag_name] = value
 
-                extra_kwargs, _extra_funcs = flag.get_extras(self.defaults)
+                extra_kwargs, extra_funcs = flag.get_extras(self._defaults)
                 fmt_kwargs.update(extra_kwargs)
-                extra_funcs.update(_extra_funcs)
+                funcs.update(extra_funcs)
 
-                if value in [1, -1]:
+                if value in [1, -1]: # 1 and -1 are singular
                     fmt_kwargs.update(flag.get_empty_plurals())
                 else:
                     fmt_kwargs.update(flag.get_plurals())
-    
-        values = list(values.values())
-        for flag_name, func in extra_funcs.items():
-            try:
-                fmt_kwargs[flag_name] = func(*values)
-            except Exception:
-                fmt_kwargs[flag_name] = str(func)
 
-        formatted = self.fmt.format(**fmt_kwargs)
-        if self.strip:
+        for flag_name, func in funcs.items():
+            if ignore:
+                try:
+                    fmt_kwargs[flag_name] = func(tval)
+                except Exception:
+                    fmt_kwargs[flag_name] = str(func)
+            else:
+                fmt_kwargs[flag_name] = func(tval)
+
+        formatted = self.__fmt.format(**fmt_kwargs)
+        if self._strip_output:
             return formatted.strip()
         return formatted
 
@@ -336,6 +146,9 @@ class Formatter:
                     hours: Union[int, float] = None, minutes: Union[int, float] = None,
                     seconds: Union[int, float] = None, milliseconds: Union[int, float] = None,
                     microseconds: Union[int, float] = None) -> str:
+        """Similar to `.format_timedelta` but does not require you to input a timedelta instance.
+        
+        """
         return self.format_timedelta(datetime.timedelta(weeks=weeks or 0, days=days or 0,
                                                         hours=hours or 0, minutes=minutes or 0,
                                                         seconds=seconds or 0,
@@ -400,3 +213,4 @@ class Formatter:
             dt2 = datetime.datetime.now(tz=dt.tzinfo)
         td = dt2 - dt
         return self.format_timedelta(td)
+

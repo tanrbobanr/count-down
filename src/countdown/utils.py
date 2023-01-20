@@ -22,11 +22,27 @@ SOFTWARE.
 
 """
 
-BASE_FLAGS = {"w", "d", "h", "M", "s", "m", "u", "z"}
-PLURAL_FLAGS = {"p", "P", "ep", "eP", "Ep", "EP"}
-MICROSECONDS_IN_MILLISECOND = 1_000
-MICROSECONDS_IN_SECOND = 1_000_000
-MICROSECONDS_IN_MINUTE = MICROSECONDS_IN_SECOND * 60
-MICROSECONDS_IN_HOUR = MICROSECONDS_IN_MINUTE * 60
-MICROSECONDS_IN_DAY = MICROSECONDS_IN_HOUR * 24
-MICROSECONDS_IN_WEEK = MICROSECONDS_IN_DAY * 7
+class StaticProperty:
+    """A decorator that works similarly to `@property`, but the decorated function must take no 
+    arguments.
+
+    Example Usage
+    -------------
+    ```
+    >>> class Example:
+    >>>     @StaticProperty
+    >>>     def myprop():
+    >>>         return "Woohoo!"
+    
+    >>> print(Example.myprop)
+    'Woohoo!'
+    >>> print(Example().myprop)
+    'Woohoo!'
+    ```
+    
+    """
+    def __init__(self, func):
+        self.func = func
+
+    def __get__(self, inst, owner):
+        return self.func()
