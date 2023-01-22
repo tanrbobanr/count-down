@@ -23,6 +23,7 @@ SOFTWARE.
 """
 
 from typing import Union
+from . import exceptions
 from . import formatter
 from . import constants
 from . import models
@@ -32,14 +33,33 @@ import datetime
 import plogging
 import logging
 import typing
+import re
 
 
 class Countdown:
+    """The main class used to format and parse countdown strings.
+
+    """
     _log = plogging.setup_new("Countdown", level=logging.INFO, package=__name__)
     def __init__(self, fmt: types.SupportsBracketFormat, remove_empty: bool = True,
                  max_value: int = None, strip_output: bool = True,
                  **defaults: Union[typing.Callable[[models.TimeValue], typing.Any], typing.Any]
                  ) -> None:
+        """
+        Arguments
+        ---------
+        fmt : str
+            The bracket-style format string.
+        remove_empty : bool, default=True
+            If `True`, any flags that equal 0 will be removed from the result when formatted.
+        max_value : int, default=None
+            If given a value, the maximum number for each flag will be the given value.
+        strip_output : bool, default=True
+            If `True`, `str.strip()` will be run on the output before being returned.
+        **defaults : Any
+            Default values for the fields in `fmt`.
+        
+        """
         Countdown._log.debug(f"Updating format string: '{fmt}'")
         self.__ofmt = fmt
         self.__flags, self.__fmt = formatter.update_fmt(fmt)
@@ -75,8 +95,47 @@ class Countdown:
         
         """
         Countdown._log.debug("Creating default formatter")
-        return Countdown("{w}{wd}{d}{dd}{h}{hd}{M}{Md}{s}{sd}", wd="w ", dd="d ", hd="h ",
-                         Md="m ", sd="s ")
+        return Countdown("{y}{yd}{M}{Md}{w}{wd}{d}{dd}{h}{hd}{m}{md}{S}{Sd}", yd="y ", Md="mo ",
+                         wd="w ", dd="d ", hd="h ", md="m ", Sd="s")
+
+    def parse(self, parsable: str) -> models.TimeValue:
+        """Attempt to parse `parsable` string into a new `TimeValue` object.
+        
+        """
+        def get_int(__str: str) -> int:
+            if __str == "+":
+                return 1
+            if __str == "-":
+                return -1
+            return int(__str)
+        
+        # prepare parsing info
+        parse_info = [(flag.name, flag.get_parse_info(self._defaults)) if flag.name != "z" else
+                      (flag.name, flag.get_parse_info(self._defaults, "(-|\\+)"))
+                      for flag in self.__flags]
+        parse_info.sort(key=lambda a: a[1][1], reverse=True)
+        tval = models.TimeValue()
+
+        # start searching through the parsable str
+        for flag_name, (pat, _) in parse_info:
+            matches = list(re.finditer(pat, parsable))
+            num_matches = len(matches)
+            if num_matches == 0:
+                continue
+            if num_matches > 1:
+                m1_val = matches[0].group(0)
+                if not all(m.group(0) == m1_val for m in matches[1:]):
+                    msg = "', '".join(m.group(0) for m in matches)
+                    raise exceptions.ParseError(f"Multiple matches found for flag '{flag_name}': "
+                                                f"'{msg}'")
+            tval.set(flag_name, get_int(matches[0].group(1)))
+
+            # we remove the match in the string afterwards so later
+            # matches have a better chance of succeeding
+            parsable = re.sub(pat, "", parsable)
+        
+        return tval
+
 
     def format(self, microseconds: Union[int, float], *, ignore: bool = False) -> str:
         """The core method for formatting the format string with the given microseconds. All other
@@ -86,15 +145,6 @@ class Countdown:
         Countdown._log.debug(f"Formatting format string from microseconds: {microseconds}")
         z_flag = 1 if microseconds >= 0 else -1
         remaining = abs(int(microseconds))
-        divs: dict[str, int] = {
-            "w": constants.MICROSECONDS_IN_WEEK,
-            "d": constants.MICROSECONDS_IN_DAY,
-            "h": constants.MICROSECONDS_IN_HOUR,
-            "M": constants.MICROSECONDS_IN_MINUTE,
-            "s": constants.MICROSECONDS_IN_SECOND,
-            "m": constants.MICROSECONDS_IN_MILLISECOND,
-            "u": 1,
-        }
 
         fmt_kwargs = {"z": "+" if z_flag == 1 else "-"}
         tval = models.TimeValue(z=z_flag)
@@ -103,30 +153,31 @@ class Countdown:
         funcs: dict[str, typing.Callable[[models.TimeValue], typing.Any]] = dict()
 
         # if the flag name is present in our Flags instance, then convert; otherwise, move on
-        for flag_name, div in divs.items():
+        for flag_name, div in constants.MAP.items():
             flag: formatter.Flag = self.__flags.get(flag_name, None)
-            if flag:
-                value, remaining = divmod(remaining, div)
-                if self._max_value and value > self._max_value:
-                    remaining += (value - self._max_value) * div
-                    value = self._max_value
+            if not flag:
+                continue
+            value, remaining = divmod(remaining, div)
+            if self._max_value and value > self._max_value:
+                remaining += (value - self._max_value) * div
+                value = self._max_value
 
-                tval.set(flag_name, value)
+            tval.set(flag_name, value)
 
-                if value == 0 and self._remove_empty:
-                    fmt_kwargs.update(flag.get_empty_kwargs())
-                    continue
+            if value == 0 and self._remove_empty:
+                fmt_kwargs.update(flag.get_empty_kwargs())
+                continue
 
-                fmt_kwargs[flag_name] = value
+            fmt_kwargs[flag_name] = value
 
-                extra_kwargs, extra_funcs = flag.get_extras(self._defaults)
-                fmt_kwargs.update(extra_kwargs)
-                funcs.update(extra_funcs)
+            extra_kwargs, extra_funcs = flag.get_extras(self._defaults)
+            fmt_kwargs.update(extra_kwargs)
+            funcs.update(extra_funcs)
 
-                if value in [1, -1]: # 1 and -1 are singular
-                    fmt_kwargs.update(flag.get_empty_plurals())
-                else:
-                    fmt_kwargs.update(flag.get_plurals())
+            if value in [1, -1]: # 1 and -1 are singular
+                fmt_kwargs.update(flag.get_empty_plurals())
+            else:
+                fmt_kwargs.update(flag.get_plurals())
 
         for flag_name, func in funcs.items():
             if ignore:

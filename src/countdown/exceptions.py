@@ -21,31 +21,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 """
-from . import types
-import typing
 
-
-class StaticProperty(typing.Generic[types.T]):
-    """A decorator that works similarly to `@property`, but the decorated function must take no 
-    arguments.
-
-    Example Usage
-    -------------
-    ```
-    >>> class Example:
-    >>>     @StaticProperty
-    >>>     def myprop() -> str:
-    >>>         return "Woohoo!"
-    
-    >>> print(Example.myprop)
-    'Woohoo!'
-    >>> print(Example().myprop)
-    'Woohoo!'
-    ```
+class ParseError(Exception):
+    """Parsing of formatted countdown string has failed.
     
     """
-    def __init__(self, func: typing.Callable[[], types.T]) -> None:
-        self.func = func
-
-    def __get__(self, inst, owner) -> types.T:
-        return self.func()

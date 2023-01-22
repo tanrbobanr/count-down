@@ -1,8 +1,31 @@
+"""MIT License
+
+Copyright (c) 2023-present Tanner B. Corcoran
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+"""
+
 from typing import Union
 from . import constants
 from . import types
 import plogging
-import operator
 import logging
 import typing
 
@@ -12,18 +35,21 @@ class TimeValue:
     and/or microseconds.
     
     """
-    _log = plogging.setup_new("TimeValue", level=logging.DEBUG, package=__name__)
-    def __init__(self, z: typing.Literal[1, -1], w: Union[int, float] = None,
+    _log = plogging.setup_new("TimeValue", level=logging.INFO, package=__name__)
+    def __init__(self, z: typing.Literal[1, -1] = 1, y: Union[int, float] = None,
+                 M: Union[int, float] = None, w: Union[int, float] = None,
                  d: Union[int, float] = None, h: Union[int, float] = None,
-                 M: Union[int, float] = None, s: Union[int, float] = None,
-                 m: Union[int, float] = None, u: Union[int, float] = None) -> None:
+                 m: Union[int, float] = None, S: Union[int, float] = None,
+                 s: Union[int, float] = None, u: Union[int, float] = None) -> None:
         self.z = z
+        self.y = y
+        self.M = M
         self.w = w
         self.d = d
         self.h = h
-        self.M = M
-        self.s = s
         self.m = m
+        self.S = S
+        self.s = s
         self.u = u
 
     @typing.overload
@@ -52,61 +78,70 @@ class TimeValue:
         if name not in constants.BASE_FLAGS:
             raise ValueError(f"Invalid flag name: '{name}'")
         setattr(self, name, value)
-    
+
     @property
     def sign(self) -> typing.Literal[1, -1]:
         return self.z
+    
+    @property
+    def years(self) -> Union[int, float, None]:
+        return self.y
+    
+    @property
+    def months(self) -> Union[int, float, None]:
+        return self.M
 
     @property
-    def weeks(self) -> Union[int, float] | None:
+    def weeks(self) -> Union[int, float, None]:
         return self.w
     
     @property
-    def days(self) -> Union[int, float] | None:
+    def days(self) -> Union[int, float, None]:
         return self.d
     
     @property
-    def hours(self) -> Union[int, float] | None:
+    def hours(self) -> Union[int, float, None]:
         return self.h
     
     @property
-    def minutes(self) -> Union[int, float] | None:
-        return self.M
-    
-    @property
-    def seconds(self) -> Union[int, float] | None:
-        return self.s
-    
-    @property
-    def milliseconds(self) -> Union[int, float] | None:
+    def minutes(self) -> Union[int, float, None]:
         return self.m
     
     @property
-    def microseconds(self) -> Union[int, float] | None:
+    def seconds(self) -> Union[int, float, None]:
+        return self.S
+    
+    @property
+    def milliseconds(self) -> Union[int, float, None]:
+        return self.s
+    
+    @property
+    def microseconds(self) -> Union[int, float, None]:
         return self.u
 
     def total_microseconds(self) -> int:
-        values = (self.w or 0, self.d or 0, self.h or 0, self.M or 0, self.s or 0, self.m or 0,
-                  self.u or 0)
-        muls = (constants.MICROSECONDS_IN_WEEK, constants.MICROSECONDS_IN_DAY,
-                constants.MICROSECONDS_IN_HOUR, constants.MICROSECONDS_IN_MINUTE,
-                constants.MICROSECONDS_IN_SECOND, constants.MICROSECONDS_IN_MILLISECOND, 1)
-        return sum(map(operator.mul, values, muls)) * self.z
+        return sum(map(lambda k, v: (self.get(k) or 0) * v, constants.MAP.keys(), constants.MAP.values())) * self.z
 
     def total_milliseconds(self) -> float:
-        return self.total_microseconds / constants.MICROSECONDS_IN_MILLISECOND
+        return self.total_microseconds() / constants.MICROSECONDS_IN_MILLISECOND
 
     def total_seconds(self) -> float:
-        return self.total_microseconds / constants.MICROSECONDS_IN_SECOND
+        return self.total_microseconds() / constants.MICROSECONDS_IN_SECOND
 
     def total_minutes(self) -> float:
-        return self.total_microseconds / constants.MICROSECONDS_IN_MINUTE
+        return self.total_microseconds() / constants.MICROSECONDS_IN_MINUTE
 
     def total_hours(self) -> float:
-        return self.total_microseconds / constants.MICROSECONDS_IN_HOUR
+        return self.total_microseconds() / constants.MICROSECONDS_IN_HOUR
 
     def total_days(self) -> float:
-        return self.total_microseconds / constants.MICROSECONDS_IN_DAY
+        return self.total_microseconds() / constants.MICROSECONDS_IN_DAY
 
     def total_weeks(self) -> float:
-        return self.total_microseconds / constants.MICROSECONDS_IN_WEEK
+        return self.total_microseconds() / constants.MICROSECONDS_IN_WEEK
+    
+    def total_months(self) -> float:
+        return self.total_microseconds() / constants.MICROSECONDS_IN_MONTH
+    
+    def total_years(self) -> float:
+        return self.total_microseconds() / constants.MICROSECONDS_IN_YEAR

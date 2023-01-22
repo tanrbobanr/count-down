@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [0.0.3] - 2023-01-22
 
 ### Changed
 
@@ -14,11 +14,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Name of `Formatter` is now just `Countdown`.
 - Some values in `Countdown` (such as the updated and original formats) are stored privately and
   can be accessed through properties.
+- Default instance in `Countdown` is now a `StaticProperty`.
+
+### Fixed
+
+- `z` flag in `TimeValue` now has a default value.
 
 ### Added
 
 - Added `utils.py` for the `StaticProperty` class.
 - Added `models.py` for the `TimeValue` class.
+- Added `exceptions.py` for the `ParseError` class.
+- Added `y` (year) and `M` (month) flags. Former `M` (minute) flag changed to `m`; former `m`
+  (millisecond) flag changed to `s`; former `s` (second) flag changed to `S`.
 
 ## [0.0.2] - 2023-01-18
 
